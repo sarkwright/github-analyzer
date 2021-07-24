@@ -151,6 +151,5 @@ program
 program.parse(process.argv);
 const options = program.opts();
 apiOrg = new APIOrganization(`https://api.github.com/orgs/${options.organization}`, options.token)
-console.log(`Options: ${util.inspect(options)}`)
 
 analyze(apiOrg)
