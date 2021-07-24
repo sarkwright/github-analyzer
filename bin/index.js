@@ -54,7 +54,7 @@ class APIOrganization {
     }
 }
 
-function formatUrl(optionValue, _) {
+function formatUrl(optionValue) {
     apiOrg = new APIOrganization(`https://api.github.com/orgs/${optionValue}`)
     return optionValue
 }
@@ -64,7 +64,7 @@ function increaseVerbosity(_, previousValue){
 }
 
 function getLastPage(headers){
-    if (!!headers['link']) {
+    if (headers['link']) {
         let links = headers['link'].split(', ')
         for (const link of links){
             if (options.verbose > 1) console.log(`parsing link ${link}`)
@@ -101,9 +101,9 @@ function analyze(apiOrg) {
 }
 
 function getRepos(apiOrg, page, urls) {
-    return new Promise(function(resolve, _) {
-        if (!!!page) page = 1
-        if (!!!urls) urls = []
+    return new Promise(function(resolve) {
+        if (!page) page = 1
+        if (!urls) urls = []
         apiOrg.getRepos(page)
             .then(function(repoResults){
                 page += 1
@@ -118,9 +118,9 @@ function getRepos(apiOrg, page, urls) {
 }
 
 function getPulls(apiOrg, repoUrl, page, pulls) {
-    return new Promise(function(resolve, _) {
-        if (!!!page) page = 1
-        if (!!!pulls) pulls = []
+    return new Promise(function(resolve) {
+        if (!page) page = 1
+        if (!pulls) pulls = []
         apiOrg.getPulls(repoUrl, page)
             .then(function(pullResults){
                 page += 1
