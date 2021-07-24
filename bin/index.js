@@ -8,7 +8,7 @@ class APIOrganization {
     constructor (baseUrl, accessToken) {
         this.baseUrl = baseUrl
         axios.defaults.baseURL = baseUrl
-        axios.defaults.headers.common['Authorization'] = `'token ${accessToken}'`
+        axios.defaults.headers.common['Authorization'] = `token ${accessToken}`
         axios.defaults.headers.common['Accept'] = 'application/vnd.github.v3+json'
         this.accessToken = accessToken
     }
@@ -35,6 +35,10 @@ class APIOrganization {
                     lastPage: lastPage
                 }
             })
+            .catch(function(error){
+                console.log(`Unable to fetch the Organization repositories due to an error:\n${error}`)
+                process.exit(1)
+            })
     }
 
     getPulls(repoUrl, page){
@@ -47,16 +51,14 @@ class APIOrganization {
                     lastPage: lastPage
                 }
             })
+            .catch(function(error){
+                console.log(`Unable to fetch the pulls for ${repoUrl}, page ${page} due to an error:\n${error}`)
+            })
     }
 
     getPullRequestUrl(repo){
         return `${this.baseUrl}/${repo}/pulls`
     }
-}
-
-function formatUrl(optionValue) {
-    apiOrg = new APIOrganization(`https://api.github.com/orgs/${optionValue}`)
-    return optionValue
 }
 
 function increaseVerbosity(_, previousValue){
@@ -143,10 +145,12 @@ program.version('0.1.0');
 let apiOrg
 
 program
-    .requiredOption('-o --organization <org>', 'the name of the org to analyze', formatUrl)
+    .requiredOption('-o --organization <org>', 'the name of the org to analyze')
     .requiredOption('-t --token <token>', 'the acces token for the GitHub API')
     .option('-v --verbose', 'increase verbosity', increaseVerbosity, 0)
 program.parse(process.argv);
 const options = program.opts();
+apiOrg = new APIOrganization(`https://api.github.com/orgs/${options.organization}`, options.token)
+console.log(`Options: ${util.inspect(options)}`)
 
-analyze(apiOrg, options.token)
+analyze(apiOrg)
