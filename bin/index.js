@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const { Command } = require('commander');
+const { Command, Option } = require('commander');
 const axios = require('axios').default;
 const util = require('util')
 
@@ -34,6 +34,19 @@ class APIOrganization {
         return `${this.baseUrl}/${repo}/pulls`
     }
 
+    // getReposPages gets the headers for the repos API and returns the last page number
+    getReposLastPage() {
+        return this.githubClient.head(`${this.repoApiUrl}`)
+            .then(function(response){
+                return getLastPage(response.headers)
+            })
+            .catch(function(error){
+                // In the event of an error, log it and return 1
+                console.log(`Unable to fetch the Organization repositories headers to an error:\n${error}`)
+                return 1
+            })
+    }
+
     // getRepos gets the provided page of repos for the organization
     getRepos(page){
         return this.githubClient.get(`${this.repoApiUrl}?page=${page}`)
@@ -41,18 +54,13 @@ class APIOrganization {
                 // parse the response of the request
                 // array of urls from the response
                 let repoUrls = []
-                // the last page number returned in the response's link header
-                const lastPage = getLastPage(response.headers)
                 if (options.verbose > 1) console.log(`parsing repository response for page ${page}`)
                 for (const repo of response.data) {
                     // get the url from each repo object
                     repoUrls.push(repo.url)
                 }
                 // return an object containing the urls and the last page from the response
-                return {
-                    repoUrls: repoUrls,
-                    lastPage: lastPage
-                }
+                return repoUrls
             })
             .catch(function(error){
                 // In the event of an error, log it and exit
@@ -61,19 +69,29 @@ class APIOrganization {
             })
     }
 
+    // getPullsLastPage gets the headers for the pulls API and returns the last page number
+    getPullsLastPage(repoUrl, state) {
+        if (!state) state = 'all'
+        return this.githubClient.head(`${repoUrl}/pulls?state=${state}`)
+            .then(function(response){
+                return getLastPage(response.headers)
+            })
+            .catch(function(error){
+                // In the event of an error, log it and return 1
+                console.log(`Unable to fetch the Organization repositories headers to an error:\n${error}`)
+                return 1
+            })
+    }
+
     // getPulls gets the pull requets for provided repo and page for the organization
-    getPulls(repoUrl, page){
-        return this.githubClient.get(`${repoUrl}/pulls?page=${page}`)
+    getPulls(repoUrl, page, state){
+        if (!state) state = 'all'
+        return this.githubClient.get(`${repoUrl}/pulls?page=${page}&state=${state}`)
             .then(function(response){
                 // parse the repository response
-                // the last page number returned in the response's link header
-                const lastPage = getLastPage(response.headers)
                 if (options.verbose > 1) console.log(`parsing pull response for repo ${repoUrl.split('/')[repoUrl.split('/').length - 1]}, page ${page}`)
                 // return an object containing the pulls and the last page from the response
-                return {
-                    pulls: response.data,
-                    lastPage: lastPage
-                }
+                return response.data
             })
             .catch(function(error){
                 // In the event of an error log it
@@ -99,11 +117,12 @@ function getLastPage(headers){
             if (options.verbose > 1) console.log(`parsing link ${link}`)
             if(link.indexOf('rel="last"') !== -1){
                 // if this is the last link, parse it
-                const pageNum = parseInt(link.split('=')[1].split('>')[0])
+                let linkStr = link.split('>;')[0].split('page=')[1]
+                const pageNum = parseInt(linkStr)
                 if (pageNum) {
                     return pageNum
                 } else {
-                    console.log(`Failed parseing last link`)
+                    console.log(`Failed parseing last link from string ${link}, substring ${linkStr}`)
                 }
             }
         }
@@ -142,52 +161,60 @@ function analyze(apiOrg) {
 }
 
 // getRepos gets all pagenated repositories from the API
-function getRepos(apiOrg, page, urls) {
+function getRepos(apiOrg) {
     // return a promise for the results
     return new Promise(function(resolve) {
         // can be called recursively, so default if not provided
-        if (!page) page = 1
-        if (!urls) urls = []
-        // get the repos for the current page
-        apiOrg.getRepos(page)
-            .then(function(repoResults){
-                page += 1
-                // combine the urls from the response to the current urls
-                urls.push.apply(urls, repoResults.repoUrls)
-                if (page < repoResults.lastPage) {
-                    // if there is another page, recursively resolve
-                    resolve(getRepos(apiOrg, page, urls))
-                } else {
-                    // resolve with the collected urls
-                    resolve(urls)
+        let page = 1
+        let urls = []
+        let lastPage
+        apiOrg.getReposLastPage()
+            .then(function(lastPageResult){
+                lastPage = lastPageResult
+                let repoPromises = []
+                for (page; page <= lastPage; page++) {
+                    repoPromises.push(apiOrg.getRepos(page))
                 }
+                Promise.all(repoPromises)
+                    .then(function(repoResults){
+                        for (let repoResult of repoResults) {
+                            urls.push.apply(urls, repoResult)
+                        }
+                        // resolve with the collected urls
+                        resolve(urls)
+                    })
             })
     })
 }
 
 // getPulls gets all pagenated pull requests for the provided repo from the API
-function getPulls(apiOrg, repoUrl, page, pulls) {
+function getPulls(apiOrg, repoUrl, state) {
     // return a promise for the results
     return new Promise(function(resolve) {
         // can be called recursively, so default if not provided
-        if (!page) page = 1
-        if (!pulls) pulls = []
-        // get the pulls for the current page
-        apiOrg.getPulls(repoUrl, page)
-            .then(function(pullResults){
-                page += 1
-                // combine the pull requests from the response to the current urls
-                pulls.push.apply(pulls, pullResults.pulls)
-                if (page < pullResults.lastPage) {
-                    // if there is another page, recursively resolve
-                    resolve(getPulls(apiOrg, repoUrl, page, pulls))
-                } else {
-                    // resolve with the collected pulls
-                    resolve({
-                        repo: repoUrl,
-                        pullRequests: pulls
-                    })
+        let page = 1
+        let pulls = []
+        if (!state) state = 'all'
+        // get the first page of pulls
+        apiOrg.getPullsLastPage(repoUrl)
+            .then(function(lastPageResult){
+                lastPage = lastPageResult
+                let pullPromises = []
+                for (page; page <= lastPage; page++) {
+                    pullPromises.push(apiOrg.getPulls(repoUrl, page, state))
                 }
+                Promise.all(pullPromises)
+                    .then(function(pullResults){
+                        for (let pullResult of pullResults) {
+                            // console.log(`pullResult: ${util.inspect(pullResult)}`)
+                            pulls.push.apply(pulls, pullResult)
+                        }
+                        // resolve with the collected urls
+                        resolve({
+                            repo: repoUrl,
+                            pullRequests: pulls
+                        })
+                    })
             })
     })
 }
@@ -202,6 +229,7 @@ let apiOrg
 program
     .requiredOption('-o --organization <org>', 'the name of the org to analyze')
     .requiredOption('-t --token <token>', 'the acces token for the GitHub API')
+    .addOption(new Option('-s --state <state>', 'the states of pull requests to retrieve', 'all').choices(['open', 'closed', 'all']))
     .option('-v --verbose', 'increase verbosity', increaseVerbosity, 0)
 // Parse the arguments
 program.parse(process.argv)
