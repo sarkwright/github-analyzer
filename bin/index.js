@@ -69,6 +69,28 @@ class APIOrganization {
             })
     }
 
+    // getRepos gets all pagenated repositories from the API
+    getAllRepos() {
+        // return a promise for the results
+        return new Promise(async (resolve) => {
+            // can be called recursively, so default if not provided
+            let page = 1
+            let urls = []
+            const lastPage = await this.getReposLastPage()
+            console.log(`lastPage: ${lastPage}`)
+            let repoPromises = []
+            for (page; page <= lastPage; page++) {
+                repoPromises.push(this.getRepos(page))
+            }
+            let repoResults = await Promise.all(repoPromises)
+            for (let repoResult of repoResults) {
+                urls.push.apply(urls, repoResult)
+            }
+            // resolve with the collected urls
+            resolve(urls)
+        })
+    }
+
     // getPullsLastPage gets the headers for the pulls API and returns the last page number
     getPullsLastPage(repoUrl, state) {
         if (!state) state = 'all'
@@ -96,6 +118,32 @@ class APIOrganization {
             .catch(function(error){
                 // In the event of an error log it
                 console.log(`Unable to fetch the pulls for ${repoUrl}, page ${page} due to an error:\n${error}`)
+            })
+    }
+
+    // getAllPulls gets all pagenated pull requests for the provided repo from the API
+    getAllPulls(apiOrg, repoUrl, state) {
+        // return a promise for the results
+        return new Promise(async (resolve) => {
+            let page = 1
+            let pulls = []
+            // default if state not provided
+            if (!state) state = 'all'
+            // get the number of pages in this query
+            let lastPage = await apiOrg.getPullsLastPage(repoUrl)
+            let pullPromises = []
+            for (page; page <= lastPage; page++) {
+                pullPromises.push(apiOrg.getPulls(repoUrl, page, state))
+            }
+            let pullResults = await Promise.all(pullPromises)
+                for (let pullResult of pullResults) {
+                    pulls.push.apply(pulls, pullResult)
+                }
+                // resolve with the collected urls
+                resolve({
+                    repo: repoUrl,
+                    pullRequests: pulls
+                })
             })
     }
 }
@@ -130,93 +178,26 @@ function getLastPage(headers){
     return 1
 }
 
-// analyze is the main function for the analysis for the provided
-// apiOrg
-function analyze(apiOrg) {
+// analyze is the main function for the analysis for the provided apiOrg
+async function analyze(apiOrg) {
     console.log(`Analyzing repo ${apiOrg.orgUrl}`)
 
     // get all the repos for the organization
-    getRepos(apiOrg)
-        .then(function(repoUrlResults) {
-            if (options.verbose > 0) console.log(`Got repo urls:\n${util.inspect(repoUrlResults)}`)
-            return repoUrlResults
-        })
-        .then(function(repoUrls){
-            // get the pulls for each repo in a different async promise
-            let pullPromises = []
-            for (const repoUrl of repoUrls){
-                pullPromises.push(getPulls(apiOrg, repoUrl))
-            }
-            return Promise.all(pullPromises)
-        })
-        .then(function(pullResults){
-            // combine all the pull requests into a single array
-            let allPulls = []
-            for (const pullResult of pullResults){
-                allPulls.push.apply(allPulls, pullResult.pullRequests)
-            }
-            // log the result
-            console.log(`Found ${allPulls.length} total pull requests.`)
-        })
-}
-
-// getRepos gets all pagenated repositories from the API
-function getRepos(apiOrg) {
-    // return a promise for the results
-    return new Promise(function(resolve) {
-        // can be called recursively, so default if not provided
-        let page = 1
-        let urls = []
-        let lastPage
-        apiOrg.getReposLastPage()
-            .then(function(lastPageResult){
-                lastPage = lastPageResult
-                let repoPromises = []
-                for (page; page <= lastPage; page++) {
-                    repoPromises.push(apiOrg.getRepos(page))
-                }
-                Promise.all(repoPromises)
-                    .then(function(repoResults){
-                        for (let repoResult of repoResults) {
-                            urls.push.apply(urls, repoResult)
-                        }
-                        // resolve with the collected urls
-                        resolve(urls)
-                    })
-            })
-    })
-}
-
-// getPulls gets all pagenated pull requests for the provided repo from the API
-function getPulls(apiOrg, repoUrl, state) {
-    // return a promise for the results
-    return new Promise(function(resolve) {
-        // can be called recursively, so default if not provided
-        let page = 1
-        let pulls = []
-        if (!state) state = 'all'
-        // get the first page of pulls
-        apiOrg.getPullsLastPage(repoUrl)
-            .then(function(lastPageResult){
-                lastPage = lastPageResult
-                let pullPromises = []
-                for (page; page <= lastPage; page++) {
-                    pullPromises.push(apiOrg.getPulls(repoUrl, page, state))
-                }
-                Promise.all(pullPromises)
-                    .then(function(pullResults){
-                        for (let pullResult of pullResults) {
-                            // console.log(`pullResult: ${util.inspect(pullResult)}`)
-                            pulls.push.apply(pulls, pullResult)
-                        }
-                        // resolve with the collected urls
-                        resolve({
-                            repo: repoUrl,
-                            pullRequests: pulls
-                        })
-                    })
-            })
-    })
+    const repoUrls = await apiOrg.getAllRepos()
+    if (options.verbose > 0) console.log(`Got repo urls:\n${util.inspect(repoUrls)}`)
+    // get the pulls for each repo in a different async promise
+    let pullPromises = []
+    for (const repoUrl of repoUrls){
+        pullPromises.push(apiOrg.getAllPulls(apiOrg, repoUrl))
+    }
+    let pullResults = await Promise.all(pullPromises)
+    // combine all the pull requests into a single array
+    let allPulls = []
+    for (const pullResult of pullResults){
+        allPulls.push.apply(allPulls, pullResult.pullRequests)
+    }
+    // log the result
+    console.log(`Found ${allPulls.length} total pull requests.`)
 }
 
 // create a commander instance
