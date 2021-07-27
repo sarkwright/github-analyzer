@@ -70,25 +70,22 @@ class APIOrganization {
     }
 
     // getRepos gets all pagenated repositories from the API
-    getAllRepos() {
-        // return a promise for the results
-        return new Promise(async (resolve) => {
-            // can be called recursively, so default if not provided
-            let page = 1
-            let urls = []
-            const lastPage = await this.getReposLastPage()
-            console.log(`lastPage: ${lastPage}`)
-            let repoPromises = []
-            for (page; page <= lastPage; page++) {
-                repoPromises.push(this.getRepos(page))
-            }
-            let repoResults = await Promise.all(repoPromises)
-            for (let repoResult of repoResults) {
-                urls.push.apply(urls, repoResult)
-            }
-            // resolve with the collected urls
-            resolve(urls)
-        })
+    async getAllRepos() {
+        // can be called recursively, so default if not provided
+        let page = 1
+        let urls = []
+        const lastPage = await this.getReposLastPage()
+        console.log(`lastPage: ${lastPage}`)
+        let repoPromises = []
+        for (page; page <= lastPage; page++) {
+            repoPromises.push(this.getRepos(page))
+        }
+        let repoResults = await Promise.all(repoPromises)
+        for (let repoResult of repoResults) {
+            urls.push.apply(urls, repoResult)
+        }
+        // resolve with the collected urls
+        return urls
     }
 
     // getPullsLastPage gets the headers for the pulls API and returns the last page number
@@ -122,9 +119,7 @@ class APIOrganization {
     }
 
     // getAllPulls gets all pagenated pull requests for the provided repo from the API
-    getAllPulls(apiOrg, repoUrl, state) {
-        // return a promise for the results
-        return new Promise(async (resolve) => {
+    async getAllPulls(apiOrg, repoUrl, state) {
             let page = 1
             let pulls = []
             // default if state not provided
@@ -140,11 +135,10 @@ class APIOrganization {
                     pulls.push.apply(pulls, pullResult)
                 }
                 // resolve with the collected urls
-                resolve({
+                return {
                     repo: repoUrl,
                     pullRequests: pulls
-                })
-            })
+                }
     }
 }
 
