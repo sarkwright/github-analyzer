@@ -216,7 +216,6 @@ async function analyze(apiOrg, options) {
   }
   // log the result
   console.log(`Found ${allPulls.length} total pull requests.`);
-  console.log(`last: ${util.inspect(allPulls[allPulls.length - 1])}`);
 }
 
 // create a commander instance
